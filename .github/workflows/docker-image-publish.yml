@@ -1,0 +1,71 @@
+name: Publish Docker Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Semver of docker image'
+        type: string
+        required: true
+        default: '0.0.1'
+      registry:
+        description: 'Registry'
+        type: string
+        required: false
+        default: '["ghcr.io"]'
+      is-latest:
+        description: 'Defines is this image lates'
+        type: string
+        required: false
+        default: 'true'
+      
+jobs:
+  publish-docker-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        registry: ${{fromJSON(inputs.registry)}}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Log in to the registry
+        uses: docker/login-action@master
+        with:
+          registry: ${{ matrix.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (Latest)
+        if: ${{inputs.is-latest == 'true'}}
+        uses: docker/metadata-action@master
+        id: meta
+        with:
+          images: ${{ matrix.registry }}/${{ github.repository }}
+          tags: |
+            type=raw, value=latest
+            type=raw, value=${{ inputs.version }}
+            
+      - name: Extract metadata
+        if: ${{inputs.is-latest != 'true'}}
+        uses: docker/metadata-action@master
+        id: meta
+        with:
+          images: ${{ matrix.registry }}/${{ github.repository }}
+          tags: |
+            type=raw, value=${{ inputs.version }}
+
+      - name: Build and Push Docker image
+        uses: docker/build-push-action@master
+        with:
+          context: .
+          build-args: |
+            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+            GITHUB_USERNAME=${{ github.actor }}
+            REPOSITORY_OWNER=${{github.repository_owner}}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
